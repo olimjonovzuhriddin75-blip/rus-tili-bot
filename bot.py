@@ -287,6 +287,18 @@ def main_menu():
     return InlineKeyboardMarkup(keyboard)
 
 
+def back_to_menu_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+    ])
+
+
+MAIN_MENU_TEXT = (
+    "🇷🇺 RUS TILI TRAINER\n\n"
+    "Bosh menyu. Quyidagi tugmalardan birini tanlang."
+)
+
+
 # =========================================================
 # START
 # =========================================================
@@ -479,7 +491,8 @@ async def send_exam_question(query, context):
                 f"Natija: {score}/20\n"
                 f"✅ O‘tdingiz!\n\n"
                 f"⭐ +200 XP\n"
-                f"🚀 Keyingi 20 ta so‘z ochildi!"
+                f"🚀 Keyingi 20 ta so‘z ochildi!",
+                reply_markup=back_to_menu_keyboard()
             )
 
         else:
@@ -489,7 +502,8 @@ async def send_exam_question(query, context):
                 f"Natija: {score}/20\n"
                 f"❌ O‘tmadingiz.\n\n"
                 f"Kamida 16/20 kerak.\n"
-                f"📚 So‘zlarni yana takrorlang."
+                f"📚 So‘zlarni yana takrorlang.",
+                reply_markup=back_to_menu_keyboard()
             )
 
         return
@@ -538,6 +552,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
 
+    if data == "menu":
+        await query.edit_message_text(
+            MAIN_MENU_TEXT,
+            reply_markup=main_menu()
+        )
+        return
+
     if data == "today":
         await show_today_callback(query)
         return
@@ -566,9 +587,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await translation_game(query)
         return
 
+    if data in ("game_russian", "game_pronounce", "game_fast"):
+        await query.edit_message_text(
+            "🚧 Bu o‘yin tez orada qo‘shiladi!",
+            reply_markup=back_to_menu_keyboard()
+        )
+        return
+
     if data.startswith("answer|"):
 
         _, ru, correct, answer = data.split("|")
+
+        game_again_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎮 Yana o‘ynash", callback_data="game_translate")],
+            [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+        ])
 
         if answer == correct:
             add_xp(user_id, 10)
@@ -577,7 +610,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ To‘g‘ri!\n\n"
                 f"🇷🇺 {ru}\n"
                 f"🇺🇿 {correct}\n\n"
-                f"⭐ +10 XP"
+                f"⭐ +10 XP",
+                reply_markup=game_again_keyboard
             )
         else:
             add_mistake(user_id, ru, correct)
@@ -585,7 +619,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"❌ Xato!\n\n"
                 f"To‘g‘ri javob:\n"
-                f"🇷🇺 {ru} — 🇺🇿 {correct}"
+                f"🇷🇺 {ru} — 🇺🇿 {correct}",
+                reply_markup=game_again_keyboard
             )
 
         return
@@ -659,7 +694,8 @@ async def show_mistakes(query):
 
     if not mistakes:
         await query.edit_message_text(
-            "🎉 Hozircha xato so‘zlaringiz yo‘q!"
+            "🎉 Hozircha xato so‘zlaringiz yo‘q!",
+            reply_markup=back_to_menu_keyboard()
         )
         return
 
@@ -668,7 +704,7 @@ async def show_mistakes(query):
     for word, translation, count in mistakes:
         text += f"🇷🇺 {word} — {translation} ({count}x)\n"
 
-    await query.edit_message_text(text)
+    await query.edit_message_text(text, reply_markup=back_to_menu_keyboard())
 
 
 # =========================================================
@@ -691,7 +727,8 @@ async def show_stats(query):
         f"⭐ XP: {xp}\n"
         f"🏆 Level: {level}\n"
         f"🔥 Streak: {streak} kun\n\n"
-        f"🎯 Keyingi maqsad: {level * 1000} XP"
+        f"🎯 Keyingi maqsad: {level * 1000} XP",
+        reply_markup=back_to_menu_keyboard()
     )
 
 
@@ -720,7 +757,8 @@ async def show_rank(query):
     await query.edit_message_text(
         f"🏆 SIZNING RANKINGIZ\n\n"
         f"{rank}\n\n"
-        f"⭐ XP: {xp}"
+        f"⭐ XP: {xp}",
+        reply_markup=back_to_menu_keyboard()
     )
 
 
@@ -799,3 +837,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
