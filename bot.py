@@ -267,6 +267,33 @@ def update_streak(user_id):
 
 
 # =========================================================
+# SAFE MESSAGE EDIT
+# =========================================================
+
+async def safe_edit(query, text, reply_markup=None, parse_mode=None):
+    """
+    Inline tugma rasm/audio xabarida bosilganda Telegram
+    'There is no text in the message to edit' xatosini bermasligi uchun.
+    Text xabar bo'lsa — tahrirlaydi, boshqa turdagi xabar bo'lsa — yangi xabar yuboradi.
+    """
+    message = getattr(query, "message", None)
+
+    kwargs = {}
+    if reply_markup is not None:
+        kwargs["reply_markup"] = reply_markup
+    if parse_mode is not None:
+        kwargs["parse_mode"] = parse_mode
+
+    # Faqat oddiy text xabarni edit qilamiz.
+    if message is not None and getattr(message, "text", None) is not None:
+        return await query.edit_message_text(text, **kwargs)
+
+    # Photo/audio/document kabi text bo'lmagan xabarlarda yangi xabar yuboramiz.
+    if message is not None:
+        return await message.reply_text(text, **kwargs)
+
+
+# =========================================================
 # MENU
 # =========================================================
 
@@ -373,10 +400,12 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_index = (stage - 1) * 20
     words = WORDS[start_index:start_index + 20]
 
-    if len(words) < 20:
-        await update.message.reply_text(
-            "🎉 Barcha mavjud so‘zlarni tugatding!"
-        )
+    if not words:
+        target = update.message
+        if target:
+            await target.reply_text(
+                "🎉 Hozircha barcha mavjud so‘zlarni tugatding!"
+            )
         return
 
     text = f"📚 {stage}-BOSQICH\n\n"
@@ -389,14 +418,16 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Keyin 📝 Imtihonni topshir."
     )
 
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎮 O‘yin boshlash", callback_data="games")],
-            [InlineKeyboardButton("📝 Imtihon", callback_data="exam")],
-            [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
-        ])
-    )
+    target = update.message
+    if target:
+        await target.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎮 O‘yin boshlash", callback_data="games")],
+                [InlineKeyboardButton("📝 Imtihon", callback_data="exam")],
+                [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+            ])
+        )
 
 
 # =========================================================
@@ -453,7 +484,7 @@ async def translation_game(query):
         [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
     )
 
-    await query.edit_message_text(
+    await safe_edit(query, 
         f"🇷🇺 **{ru}**\n\n"
         "Qaysi tarjimasi to‘g‘ri?",
         parse_mode="Markdown",
@@ -491,7 +522,7 @@ async def russian_game(query):
         [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
     )
 
-    await query.edit_message_text(
+    await safe_edit(query, 
         f"🇺🇿 **{uz}**\n\n"
         "Qaysi so‘zning ruschasi to‘g‘ri?",
         parse_mode="Markdown",
@@ -565,7 +596,7 @@ async def send_fast_question(query, context):
         bonus = score * 5
         add_xp(query.from_user.id, bonus)
 
-        await query.edit_message_text(
+        await safe_edit(query, 
             f"⚡ TEZKOR TEST TUGADI!\n\n"
             f"Natija: {score}/{FAST_TOTAL_QUESTIONS}\n"
             f"⭐ +{bonus} XP",
@@ -598,7 +629,7 @@ async def send_fast_question(query, context):
             )
         ])
 
-    await query.edit_message_text(
+    await safe_edit(query, 
         f"⚡ Savol {index + 1}/{FAST_TOTAL_QUESTIONS}\n\n"
         f"🇷🇺 **{ru}**\n\n"
         "Tez tanlang!",
@@ -623,7 +654,7 @@ async def exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     words = WORDS[start_index:start_index + 20]
 
     if len(words) < 20:
-        await query.edit_message_text(
+        await safe_edit(query, 
             "🎉 Hozircha barcha mavjud so‘zlar tugagan."
         )
         return
@@ -659,7 +690,7 @@ async def send_exam_question(query, context):
             if bonus:
                 add_xp(user_id, bonus)
 
-            await query.edit_message_text(
+            await safe_edit(query, 
                 f"🎉 IMTIHON TUGADI!\n\n"
                 f"Natija: {score}/20\n"
                 f"✅ O‘tdingiz!\n\n"
@@ -670,7 +701,7 @@ async def send_exam_question(query, context):
 
         else:
 
-            await query.edit_message_text(
+            await safe_edit(query, 
                 f"📝 IMTIHON TUGADI\n\n"
                 f"Natija: {score}/20\n"
                 f"❌ O‘tmadingiz.\n\n"
@@ -704,7 +735,7 @@ async def send_exam_question(query, context):
             )
         ])
 
-    await query.edit_message_text(
+    await safe_edit(query, 
         f"📝 IMTIHON\n\n"
         f"Savol {index + 1}/20\n\n"
         f"🇷🇺 {ru}\n\n"
@@ -726,7 +757,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     if data == "menu":
-        await query.edit_message_text(
+        await safe_edit(query, 
             MAIN_MENU_TEXT,
             reply_markup=main_menu()
         )
@@ -784,7 +815,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if answer == correct:
             add_xp(user_id, 10)
 
-            await query.edit_message_text(
+            await safe_edit(query, 
                 f"✅ To‘g‘ri!\n\n"
                 f"🇷🇺 {ru}\n"
                 f"🇺🇿 {correct}\n\n"
@@ -794,7 +825,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             add_mistake(user_id, ru, correct)
 
-            await query.edit_message_text(
+            await safe_edit(query, 
                 f"❌ Xato!\n\n"
                 f"To‘g‘ri javob:\n"
                 f"🇷🇺 {ru} — 🇺🇿 {correct}",
@@ -815,7 +846,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if answer == correct:
             add_xp(user_id, 10)
 
-            await query.edit_message_text(
+            await safe_edit(query, 
                 f"✅ To‘g‘ri!\n\n"
                 f"🇺🇿 {uz}\n"
                 f"🇷🇺 {correct}\n\n"
@@ -825,7 +856,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             add_mistake(user_id, correct, uz)
 
-            await query.edit_message_text(
+            await safe_edit(query, 
                 f"❌ Xato!\n\n"
                 f"To‘g‘ri javob:\n"
                 f"🇺🇿 {uz} — 🇷🇺 {correct}",
@@ -914,7 +945,7 @@ async def show_mistakes(query):
     mistakes = cur.fetchall()
 
     if not mistakes:
-        await query.edit_message_text(
+        await safe_edit(query, 
             "🎉 Hozircha xato so‘zlaringiz yo‘q!",
             reply_markup=back_to_menu_keyboard()
         )
@@ -925,7 +956,7 @@ async def show_mistakes(query):
     for word, translation, count in mistakes:
         text += f"🇷🇺 {word} — {translation} ({count}x)\n"
 
-    await query.edit_message_text(text, reply_markup=back_to_menu_keyboard())
+    await safe_edit(query, text, reply_markup=back_to_menu_keyboard())
 
 
 # =========================================================
@@ -942,7 +973,7 @@ async def show_stats(query):
     stage = user[3]
     streak = user[4]
 
-    await query.edit_message_text(
+    await safe_edit(query, 
         f"📊 SIZNING STATISTIKANGIZ\n\n"
         f"📚 Bosqich: {stage}\n"
         f"⭐ XP: {xp}\n"
@@ -975,7 +1006,7 @@ async def show_rank(query):
     else:
         rank = "👑 Russian Master"
 
-    await query.edit_message_text(
+    await safe_edit(query, 
         f"🏆 SIZNING RANKINGIZ\n\n"
         f"{rank}\n\n"
         f"⭐ XP: {xp}",
@@ -997,12 +1028,20 @@ async def show_today_callback(query):
     start_index = (stage - 1) * 20
     words = WORDS[start_index:start_index + 20]
 
+    if not words:
+        await safe_edit(
+            query,
+            "🎉 Hozircha barcha mavjud so‘zlarni tugatding!",
+            reply_markup=back_to_menu_keyboard()
+        )
+        return
+
     text = f"📚 {stage}-BOSQICH\n\n"
 
     for i, (ru, uz) in enumerate(words, 1):
         text += f"{i}. {ru} — {uz}\n"
 
-    await query.edit_message_text(
+    await safe_edit(query,
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎮 O‘yin", callback_data="games")],
@@ -1100,6 +1139,15 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================================================
+# ERROR HANDLER
+# =========================================================
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    # Railway Logs'da xatoni ko'rsatadi, botni to'xtatmaydi.
+    print(f"BOT ERROR: {context.error!r}")
+
+
+# =========================================================
 # START BOT
 # =========================================================
 
@@ -1122,7 +1170,7 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_button)
     )
 
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
