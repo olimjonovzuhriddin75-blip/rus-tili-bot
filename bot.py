@@ -444,7 +444,8 @@ async def games(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")],
     ]
 
-    await update.callback_query.edit_message_text(
+    await safe_edit(
+        update.callback_query,
         "🎮 O‘YINLAR\n\nQaysi o‘yinni o‘ynaymiz?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
