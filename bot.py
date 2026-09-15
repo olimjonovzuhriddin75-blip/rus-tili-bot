@@ -3,7 +3,7 @@ import random
 import sqlite3
 from datetime import date, timedelta
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -310,6 +310,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     get_user(user_id)
     update_streak(user_id)
 
+    # Eski (kerak bo'lmagan) pastki klaviaturani tozalab yuboradi.
+    # Bu xabarni darhol o'chirib tashlaymiz, foydalanuvchiga bezovtalik bermaydi.
+    cleanup_msg = await update.message.reply_text(
+        "⏳",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await cleanup_msg.delete()
+
     text = (
         "🇷🇺 RUS TILI TRAINER\n\n"
         "Salom! 👋\n"
@@ -429,6 +437,40 @@ async def translation_game(query):
     await query.edit_message_text(
         f"🇷🇺 **{ru}**\n\n"
         "Qaysi tarjimasi to‘g‘ri?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def russian_game(query):
+
+    word = random.choice(WORDS)
+
+    ru, uz = word
+
+    options = [ru]
+
+    while len(options) < 3:
+        fake = random.choice(WORDS)[0]
+
+        if fake not in options:
+            options.append(fake)
+
+    random.shuffle(options)
+
+    keyboard = []
+
+    for option in options:
+        keyboard.append([
+            InlineKeyboardButton(
+                option,
+                callback_data=f"ranswer|{uz}|{ru}|{option}"
+            )
+        ])
+
+    await query.edit_message_text(
+        f"🇺🇿 **{uz}**\n\n"
+        "Qaysi so‘zning ruschasi to‘g‘ri?",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -587,7 +629,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await translation_game(query)
         return
 
-    if data in ("game_russian", "game_pronounce", "game_fast"):
+    if data == "game_russian":
+        await russian_game(query)
+        return
+
+    if data in ("game_pronounce", "game_fast"):
         await query.edit_message_text(
             "🚧 Bu o‘yin tez orada qo‘shiladi!",
             reply_markup=back_to_menu_keyboard()
@@ -620,6 +666,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"❌ Xato!\n\n"
                 f"To‘g‘ri javob:\n"
                 f"🇷🇺 {ru} — 🇺🇿 {correct}",
+                reply_markup=game_again_keyboard
+            )
+
+        return
+
+    if data.startswith("ranswer|"):
+
+        _, uz, correct, answer = data.split("|")
+
+        game_again_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎮 Yana o‘ynash", callback_data="game_russian")],
+            [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+        ])
+
+        if answer == correct:
+            add_xp(user_id, 10)
+
+            await query.edit_message_text(
+                f"✅ To‘g‘ri!\n\n"
+                f"🇺🇿 {uz}\n"
+                f"🇷🇺 {correct}\n\n"
+                f"⭐ +10 XP",
+                reply_markup=game_again_keyboard
+            )
+        else:
+            add_mistake(user_id, correct, uz)
+
+            await query.edit_message_text(
+                f"❌ Xato!\n\n"
+                f"To‘g‘ri javob:\n"
+                f"🇺🇿 {uz} — 🇷🇺 {correct}",
                 reply_markup=game_again_keyboard
             )
 
@@ -837,4 +914,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
