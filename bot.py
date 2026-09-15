@@ -1,9 +1,11 @@
 import os
+import io
 import random
 import sqlite3
 from datetime import date, timedelta
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, ReplyKeyboardRemove
+from gtts import gTTS
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -287,6 +289,17 @@ def main_menu():
     return InlineKeyboardMarkup(keyboard)
 
 
+def main_reply_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            ["📚 Bugungi so‘zlar", "🎮 O‘yinlar"],
+            ["🎭 Test", "🔊 Talaffuz"],
+            ["❌ Xato so‘zlar", "📊 Statistika"],
+        ],
+        resize_keyboard=True
+    )
+
+
 def back_to_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
@@ -310,13 +323,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     get_user(user_id)
     update_streak(user_id)
 
-    # Eski (kerak bo'lmagan) pastki klaviaturani tozalab yuboradi.
-    # Bu xabarni darhol o'chirib tashlaymiz, foydalanuvchiga bezovtalik bermaydi.
-    cleanup_msg = await update.message.reply_text(
+    # Pastki tugmalarni (doimiy klaviaturani) o'rnatadi.
+    # Bu xabar ko'rinmas tarzda darhol o'chiriladi, faqat tugmalar qoladi.
+    setup_msg = await update.message.reply_text(
         "⏳",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=main_reply_keyboard()
     )
-    await cleanup_msg.delete()
+    await setup_msg.delete()
 
     text = (
         "🇷🇺 RUS TILI TRAINER\n\n"
@@ -380,7 +393,8 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎮 O‘yin boshlash", callback_data="games")],
-            [InlineKeyboardButton("📝 Imtihon", callback_data="exam")]
+            [InlineKeyboardButton("📝 Imtihon", callback_data="exam")],
+            [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
         ])
     )
 
@@ -396,6 +410,7 @@ async def games(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🇷🇺 Ruschasini top", callback_data="game_russian")],
         [InlineKeyboardButton("🔊 Talaffuz", callback_data="game_pronounce")],
         [InlineKeyboardButton("⚡ Tezkor test", callback_data="game_fast")],
+        [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")],
     ]
 
     await update.callback_query.edit_message_text(
@@ -434,6 +449,10 @@ async def translation_game(query):
             )
         ])
 
+    keyboard.append(
+        [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+    )
+
     await query.edit_message_text(
         f"🇷🇺 **{ru}**\n\n"
         "Qaysi tarjimasi to‘g‘ri?",
@@ -468,9 +487,121 @@ async def russian_game(query):
             )
         ])
 
+    keyboard.append(
+        [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+    )
+
     await query.edit_message_text(
         f"🇺🇿 **{uz}**\n\n"
         "Qaysi so‘zning ruschasi to‘g‘ri?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# =========================================================
+# PRONUNCIATION GAME
+# =========================================================
+
+def generate_pronunciation_audio(text):
+    tts = gTTS(text=text, lang="ru")
+    buf = io.BytesIO()
+    tts.write_to_fp(buf)
+    buf.seek(0)
+    buf.name = "talaffuz.mp3"
+    return buf
+
+
+async def pronunciation_game(query):
+
+    ru, uz = random.choice(WORDS)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔁 Yana bir so‘z", callback_data="game_pronounce")],
+        [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+    ])
+
+    try:
+        audio = generate_pronunciation_audio(ru)
+
+        await query.message.reply_audio(
+            audio=audio,
+            title=ru,
+            caption=(
+                f"🇷🇺 {ru}\n"
+                f"🇺🇿 {uz}\n\n"
+                "🔊 Talaffuzni diqqat bilan tinglang va takrorlang."
+            ),
+            reply_markup=keyboard
+        )
+
+    except Exception:
+        await query.message.reply_text(
+            "⚠️ Talaffuzni yuklab bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+            reply_markup=keyboard
+        )
+
+
+# =========================================================
+# QUICK-FIRE TEST (10 rapid questions)
+# =========================================================
+
+FAST_TOTAL_QUESTIONS = 10
+
+
+async def start_fast_game(query, context):
+    context.user_data["fast_score"] = 0
+    context.user_data["fast_index"] = 0
+    await send_fast_question(query, context)
+
+
+async def send_fast_question(query, context):
+
+    index = context.user_data.get("fast_index", 0)
+    score = context.user_data.get("fast_score", 0)
+
+    if index >= FAST_TOTAL_QUESTIONS:
+
+        bonus = score * 5
+        add_xp(query.from_user.id, bonus)
+
+        await query.edit_message_text(
+            f"⚡ TEZKOR TEST TUGADI!\n\n"
+            f"Natija: {score}/{FAST_TOTAL_QUESTIONS}\n"
+            f"⭐ +{bonus} XP",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔁 Yana boshlash", callback_data="game_fast")],
+                [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
+            ])
+        )
+        return
+
+    ru, correct = random.choice(WORDS)
+
+    options = [correct]
+
+    while len(options) < 3:
+        fake = random.choice(WORDS)[1]
+
+        if fake not in options:
+            options.append(fake)
+
+    random.shuffle(options)
+
+    keyboard = []
+
+    for option in options:
+        keyboard.append([
+            InlineKeyboardButton(
+                option,
+                callback_data=f"fastanswer|{correct}|{option}"
+            )
+        ])
+
+    await query.edit_message_text(
+        f"⚡ Savol {index + 1}/{FAST_TOTAL_QUESTIONS}\n\n"
+        f"🇷🇺 **{ru}**\n\n"
+        "Tez tanlang!",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -633,11 +764,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await russian_game(query)
         return
 
-    if data in ("game_pronounce", "game_fast"):
-        await query.edit_message_text(
-            "🚧 Bu o‘yin tez orada qo‘shiladi!",
-            reply_markup=back_to_menu_keyboard()
-        )
+    if data == "game_pronounce":
+        await pronunciation_game(query)
+        return
+
+    if data == "game_fast":
+        await start_fast_game(query, context)
         return
 
     if data.startswith("answer|"):
@@ -700,6 +832,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=game_again_keyboard
             )
 
+        return
+
+    if data.startswith("fastanswer|"):
+
+        _, correct, answer = data.split("|")
+
+        if answer == correct:
+            context.user_data["fast_score"] = context.user_data.get("fast_score", 0) + 1
+
+        context.user_data["fast_index"] = context.user_data.get("fast_index", 0) + 1
+
+        await send_fast_question(query, context)
         return
 
     if data.startswith("exam_answer|"):
@@ -862,7 +1006,8 @@ async def show_today_callback(query):
         text,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎮 O‘yin", callback_data="games")],
-            [InlineKeyboardButton("📝 Imtihon", callback_data="exam")]
+            [InlineKeyboardButton("📝 Imtihon", callback_data="exam")],
+            [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")]
         ])
     )
 
@@ -870,6 +1015,70 @@ async def show_today_callback(query):
 # =========================================================
 # COMMANDS
 # =========================================================
+
+class FakeQuery:
+    """
+    Pastki (doimiy) klaviatura tugmalari oddiy matn xabar sifatida keladi,
+    lekin ko'plab funksiyalar (show_stats, show_rank, translation_game va h.k.)
+    inline tugma bosilganda keladigan 'query' obyektini kutadi.
+    Bu klass o'sha 'query'ni taqlid qiladi: edit_message_text chaqirilganda,
+    xabarni tahrirlash o'rniga yangi xabar yuboradi.
+    """
+
+    def __init__(self, update: Update):
+        self.message = update.message
+        self.from_user = update.effective_user
+
+    async def edit_message_text(self, text, reply_markup=None, parse_mode=None):
+        kwargs = {}
+        if reply_markup is not None:
+            kwargs["reply_markup"] = reply_markup
+        if parse_mode is not None:
+            kwargs["parse_mode"] = parse_mode
+        await self.message.reply_text(text, **kwargs)
+
+
+async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    text = update.message.text
+    query = FakeQuery(update)
+
+    if text == "📚 Bugungi so‘zlar":
+        await today(update, context)
+        return
+
+    if text == "🎮 O‘yinlar":
+        keyboard = [
+            [InlineKeyboardButton("🇺🇿 To‘g‘ri tarjimani top", callback_data="game_translate")],
+            [InlineKeyboardButton("🇷🇺 Ruschasini top", callback_data="game_russian")],
+            [InlineKeyboardButton("🔊 Talaffuz", callback_data="game_pronounce")],
+            [InlineKeyboardButton("⚡ Tezkor test", callback_data="game_fast")],
+            [InlineKeyboardButton("🏠 Bosh menyu", callback_data="menu")],
+        ]
+        await update.message.reply_text(
+            "🎮 O‘YINLAR\n\nQaysi o‘yinni o‘ynaymiz?",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+
+    if text == "🎭 Test":
+        await translation_game(query)
+        return
+
+    if text == "🔊 Talaffuz":
+        await pronunciation_game(query)
+        return
+
+    if text == "❌ Xato so‘zlar":
+        await show_mistakes(query)
+        return
+
+    if text == "📊 Statistika":
+        await show_stats(query)
+        return
+
+    # Tanilmagan matn kelsa, hech narsa demaymiz (spam bo'lmasin uchun)
+
 
 async def words_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await today(update, context)
@@ -907,6 +1116,10 @@ def main():
 
     app.add_handler(
         CallbackQueryHandler(button_handler)
+    )
+
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_button)
     )
 
     app.run_polling()
